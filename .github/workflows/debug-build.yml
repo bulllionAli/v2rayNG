@@ -85,12 +85,16 @@ jobs:
     # No "Decode Keystore" step here on purpose: debug builds are signed
     # automatically by Gradle with a throwaway debug key, so no repo
     # secrets are needed. This is why this workflow works on a fork.
+    #
+    # -PABI_FILTERS=arm64-v8a uses the ABI split already defined in
+    # app/build.gradle.kts to build only the arm64-v8a APK (and skips the
+    # universal APK), instead of one APK per ABI plus a ~200MB universal one.
     - name: Build debug APK
       run: |
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew assembleFdroidDebug
+        ./gradlew assembleFdroidDebug -PABI_FILTERS=arm64-v8a
 
     - name: Upload debug APK
       uses: actions/upload-artifact@v7
