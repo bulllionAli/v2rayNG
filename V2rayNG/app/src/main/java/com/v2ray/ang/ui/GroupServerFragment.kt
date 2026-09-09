@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -10,7 +11,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
@@ -26,7 +26,6 @@ import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
-import com.v2ray.ang.helper.SimpleItemTouchHelperCallback
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +37,6 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
         get() = requireActivity() as MainActivity
     private val mainViewModel: MainViewModel by activityViewModels()
     private lateinit var adapter: MainRecyclerAdapter
-    private var itemTouchHelper: ItemTouchHelper? = null
     private val subId: String by lazy { arguments?.getString(ARG_SUB_ID).orEmpty() }
 
     private val share_method: Array<out String> by lazy {
@@ -63,6 +61,7 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
     override fun inflateBinding(inflater: LayoutInflater, container: ViewGroup?) =
         FragmentGroupServerBinding.inflate(inflater, container, false)
 
+    @SuppressLint("NotifyDataSetChanged")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 
         adapter = MainRecyclerAdapter(mainViewModel, ActivityAdapterListener())
@@ -75,9 +74,6 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
         addCustomDividerToRecyclerView(binding.recyclerView, R.drawable.custom_divider)
         binding.recyclerView.adapter = adapter
 
-        itemTouchHelper = ItemTouchHelper(SimpleItemTouchHelperCallback(adapter, allowSwipe = false))
-        itemTouchHelper?.attachToRecyclerView(binding.recyclerView)
-
         binding.refreshLayout.isEnabled = false
 //        binding.refreshLayout.setOnRefreshListener(this)
 //        // Set the distance to trigger sync to 160dp
@@ -89,6 +85,13 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
             }
             // LogUtil.d(TAG, "GroupServerFragment updateListAction subId=$subId")
             adapter.setData(mainViewModel.serversCache, index)
+        }
+
+        // Re-render the whole list whenever the selection changes (long-press start, tap
+        // toggle, the toolbar "copy" action, or a back-press clearing the selection) so
+        // highlighting and the per-row action icons stay in sync.
+        mainViewModel.selectionCountAction.observe(viewLifecycleOwner) {
+            adapter.notifyDataSetChanged()
         }
 
         // LogUtil.d(TAG, "GroupServerFragment onViewCreated: subId=$subId")

@@ -29,6 +29,7 @@ import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
+import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
@@ -105,12 +106,14 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
+                when {
+                    mainViewModel.isSelectionMode() -> mainViewModel.clearSelection()
+                    binding.drawerLayout.isDrawerOpen(GravityCompat.START) -> binding.drawerLayout.closeDrawer(GravityCompat.START)
+                    else -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
                 }
             }
         })
@@ -120,6 +123,14 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
         mainViewModel.updateTestResultAction.observe(this) { setTestState(it) }
         mainViewModel.isRunning.observe(this) { isRunning ->
             applyRunningState(false, isRunning)
+        }
+        mainViewModel.selectionCountAction.observe(this) { count ->
+            supportActionBar?.title = if (count > 0) {
+                getString(R.string.title_selected_config_count, count)
+            } else {
+                getString(R.string.title_server)
+            }
+            invalidateOptionsMenu()
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -268,7 +279,17 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
         return super.onCreateOptionsMenu(menu)
     }
 
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(R.id.copy_selected_config)?.isVisible = mainViewModel.isSelectionMode()
+        return super.onPrepareOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: MenuItem) = when (item.itemId) {
+        R.id.copy_selected_config -> {
+            copySelectedToClipboard()
+            true
+        }
+
         R.id.import_qrcode -> {
             importQRcode()
             true
@@ -518,6 +539,25 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
                     toast(getString(R.string.title_export_config_count, ret))
                 else
                     toastError(R.string.toast_failure)
+                hideLoading()
+            }
+        }
+    }
+
+    /**
+     * Copies the currently multi-selected configs to the clipboard, then exits selection mode.
+     */
+    private fun copySelectedToClipboard() {
+        if (!mainViewModel.isSelectionMode()) return
+        showLoading()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val ret = mainViewModel.exportSelectedServer()
+            launch(Dispatchers.Main) {
+                if (ret > 0)
+                    toastSuccess(getString(R.string.title_export_config_count, ret))
+                else
+                    toastError(R.string.toast_failure)
+                mainViewModel.clearSelection()
                 hideLoading()
             }
         }

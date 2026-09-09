@@ -1,0 +1,368 @@
+diff --git a/V2rayNG/app/src/main/java/com/v2ray/ang/ui/GroupServerFragment.kt b/V2rayNG/app/src/main/java/com/v2ray/ang/ui/GroupServerFragment.kt
+index 5a3c9ea..b1aa323 100644
+--- a/V2rayNG/app/src/main/java/com/v2ray/ang/ui/GroupServerFragment.kt
++++ b/V2rayNG/app/src/main/java/com/v2ray/ang/ui/GroupServerFragment.kt
+@@ -1,5 +1,6 @@
+ package com.v2ray.ang.ui
+ 
++import android.annotation.SuppressLint
+ import android.content.Intent
+ import android.os.Bundle
+ import android.view.LayoutInflater
+@@ -10,7 +11,6 @@ import androidx.appcompat.app.AlertDialog
+ import androidx.fragment.app.activityViewModels
+ import androidx.lifecycle.lifecycleScope
+ import androidx.recyclerview.widget.GridLayoutManager
+-import androidx.recyclerview.widget.ItemTouchHelper
+ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+ import com.v2ray.ang.AppConfig
+ import com.v2ray.ang.R
+@@ -26,7 +26,6 @@ import com.v2ray.ang.extension.toastSuccess
+ import com.v2ray.ang.handler.AngConfigManager
+ import com.v2ray.ang.handler.MmkvManager
+ import com.v2ray.ang.handler.SettingsChangeManager
+-import com.v2ray.ang.helper.SimpleItemTouchHelperCallback
+ import com.v2ray.ang.util.LogUtil
+ import com.v2ray.ang.viewmodel.MainViewModel
+ import kotlinx.coroutines.Dispatchers
+@@ -38,7 +37,6 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
+         get() = requireActivity() as MainActivity
+     private val mainViewModel: MainViewModel by activityViewModels()
+     private lateinit var adapter: MainRecyclerAdapter
+-    private var itemTouchHelper: ItemTouchHelper? = null
+     private val subId: String by lazy { arguments?.getString(ARG_SUB_ID).orEmpty() }
+ 
+     private val share_method: Array<out String> by lazy {
+@@ -63,6 +61,7 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
+     override fun inflateBinding(inflater: LayoutInflater, container: ViewGroup?) =
+         FragmentGroupServerBinding.inflate(inflater, container, false)
+ 
++    @SuppressLint("NotifyDataSetChanged")
+     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+ 
+         adapter = MainRecyclerAdapter(mainViewModel, ActivityAdapterListener())
+@@ -75,9 +74,6 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
+         addCustomDividerToRecyclerView(binding.recyclerView, R.drawable.custom_divider)
+         binding.recyclerView.adapter = adapter
+ 
+-        itemTouchHelper = ItemTouchHelper(SimpleItemTouchHelperCallback(adapter, allowSwipe = false))
+-        itemTouchHelper?.attachToRecyclerView(binding.recyclerView)
+-
+         binding.refreshLayout.isEnabled = false
+ //        binding.refreshLayout.setOnRefreshListener(this)
+ //        // Set the distance to trigger sync to 160dp
+@@ -91,6 +87,13 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
+             adapter.setData(mainViewModel.serversCache, index)
+         }
+ 
++        // Re-render the whole list whenever the selection changes (long-press start, tap
++        // toggle, the toolbar "copy" action, or a back-press clearing the selection) so
++        // highlighting and the per-row action icons stay in sync.
++        mainViewModel.selectionCountAction.observe(viewLifecycleOwner) {
++            adapter.notifyDataSetChanged()
++        }
++
+         // LogUtil.d(TAG, "GroupServerFragment onViewCreated: subId=$subId")
+     }
+ 
+diff --git a/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainActivity.kt b/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainActivity.kt
+index 90a42e4..4945b49 100644
+--- a/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainActivity.kt
++++ b/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainActivity.kt
+@@ -29,6 +29,7 @@ import com.v2ray.ang.enums.EConfigType
+ import com.v2ray.ang.enums.PermissionType
+ import com.v2ray.ang.extension.toast
+ import com.v2ray.ang.extension.toastError
++import com.v2ray.ang.extension.toastSuccess
+ import com.v2ray.ang.handler.AngConfigManager
+ import com.v2ray.ang.handler.MmkvManager
+ import com.v2ray.ang.handler.SettingsChangeManager
+@@ -105,12 +106,14 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
+ 
+         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+             override fun handleOnBackPressed() {
+-                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+-                } else {
+-                    isEnabled = false
+-                    onBackPressedDispatcher.onBackPressed()
+-                    isEnabled = true
++                when {
++                    mainViewModel.isSelectionMode() -> mainViewModel.clearSelection()
++                    binding.drawerLayout.isDrawerOpen(GravityCompat.START) -> binding.drawerLayout.closeDrawer(GravityCompat.START)
++                    else -> {
++                        isEnabled = false
++                        onBackPressedDispatcher.onBackPressed()
++                        isEnabled = true
++                    }
+                 }
+             }
+         })
+@@ -121,6 +124,14 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
+         mainViewModel.isRunning.observe(this) { isRunning ->
+             applyRunningState(false, isRunning)
+         }
++        mainViewModel.selectionCountAction.observe(this) { count ->
++            supportActionBar?.title = if (count > 0) {
++                getString(R.string.title_selected_config_count, count)
++            } else {
++                getString(R.string.title_server)
++            }
++            invalidateOptionsMenu()
++        }
+         mainViewModel.startListenBroadcast()
+         mainViewModel.initAssets(assets)
+     }
+@@ -268,7 +279,17 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
+         return super.onCreateOptionsMenu(menu)
+     }
+ 
++    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
++        menu.findItem(R.id.copy_selected_config)?.isVisible = mainViewModel.isSelectionMode()
++        return super.onPrepareOptionsMenu(menu)
++    }
++
+     override fun onOptionsItemSelected(item: MenuItem) = when (item.itemId) {
++        R.id.copy_selected_config -> {
++            copySelectedToClipboard()
++            true
++        }
++
+         R.id.import_qrcode -> {
+             importQRcode()
+             true
+@@ -523,6 +544,25 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
+         }
+     }
+ 
++    /**
++     * Copies the currently multi-selected configs to the clipboard, then exits selection mode.
++     */
++    private fun copySelectedToClipboard() {
++        if (!mainViewModel.isSelectionMode()) return
++        showLoading()
++        lifecycleScope.launch(Dispatchers.IO) {
++            val ret = mainViewModel.exportSelectedServer()
++            launch(Dispatchers.Main) {
++                if (ret > 0)
++                    toastSuccess(getString(R.string.title_export_config_count, ret))
++                else
++                    toastError(R.string.toast_failure)
++                mainViewModel.clearSelection()
++                hideLoading()
++            }
++        }
++    }
++
+     private fun delAllConfig() {
+         AlertDialog.Builder(this).setMessage(R.string.del_config_comfirm)
+             .setPositiveButton(android.R.string.ok) { _, _ ->
+diff --git a/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainRecyclerAdapter.kt b/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainRecyclerAdapter.kt
+index a2d150d..97262f8 100644
+--- a/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainRecyclerAdapter.kt
++++ b/V2rayNG/app/src/main/java/com/v2ray/ang/ui/MainRecyclerAdapter.kt
+@@ -18,15 +18,12 @@ import com.v2ray.ang.extension.isComplexType
+ import com.v2ray.ang.extension.nullIfBlank
+ import com.v2ray.ang.handler.AngConfigManager
+ import com.v2ray.ang.handler.MmkvManager
+-import com.v2ray.ang.helper.ItemTouchHelperAdapter
+-import com.v2ray.ang.helper.ItemTouchHelperViewHolder
+ import com.v2ray.ang.viewmodel.MainViewModel
+-import java.util.Collections
+ 
+ class MainRecyclerAdapter(
+     private val mainViewModel: MainViewModel,
+     private val adapterListener: MainAdapterListener?
+-) : RecyclerView.Adapter<MainRecyclerAdapter.BaseViewHolder>(), ItemTouchHelperAdapter {
++) : RecyclerView.Adapter<MainRecyclerAdapter.BaseViewHolder>() {
+     companion object {
+         private const val VIEW_TYPE_ITEM = 1
+         private const val VIEW_TYPE_FOOTER = 2
+@@ -83,7 +80,15 @@ class MainRecyclerAdapter(
+             holder.itemMainBinding.layoutSubscription.visibility = if (subRemarks.isEmpty()) View.GONE else View.VISIBLE
+ 
+             //layout
+-            if (doubleColumnDisplay) {
++            val inSelectionMode = mainViewModel.isSelectionMode()
++            if (inSelectionMode) {
++                // Hide the per-row action icons while selecting so a stray tap can't
++                // accidentally share/edit/remove a config.
++                holder.itemMainBinding.layoutShare.visibility = View.GONE
++                holder.itemMainBinding.layoutEdit.visibility = View.GONE
++                holder.itemMainBinding.layoutRemove.visibility = View.GONE
++                holder.itemMainBinding.layoutMore.visibility = View.GONE
++            } else if (doubleColumnDisplay) {
+                 holder.itemMainBinding.layoutShare.visibility = View.GONE
+                 holder.itemMainBinding.layoutEdit.visibility = View.GONE
+                 holder.itemMainBinding.layoutRemove.visibility = View.GONE
+@@ -110,8 +115,28 @@ class MainRecyclerAdapter(
+                 }
+             }
+ 
++            // Selection highlight (reuses the same highlight the old drag-and-drop used).
++            if (guid in mainViewModel.selectedGuids) {
++                holder.onItemSelected()
++            } else {
++                holder.onItemClear()
++            }
++
+             holder.itemMainBinding.infoContainer.setOnClickListener {
+-                adapterListener?.onSelectServer(guid)
++                if (mainViewModel.isSelectionMode()) {
++                    // MainViewModel.selectionCountAction changes here, which GroupServerFragment
++                    // observes to refresh the whole list (highlight + show/hide action icons).
++                    mainViewModel.toggleServerSelection(guid)
++                } else {
++                    adapterListener?.onSelectServer(guid)
++                }
++            }
++
++            holder.itemMainBinding.infoContainer.setOnLongClickListener {
++                if (!mainViewModel.isSelectionMode()) {
++                    mainViewModel.startSelection(guid)
++                }
++                true
+             }
+         }
+ 
+@@ -213,24 +238,8 @@ class MainRecyclerAdapter(
+     }
+ 
+     class MainViewHolder(val itemMainBinding: ItemRecyclerMainBinding) :
+-        BaseViewHolder(itemMainBinding.root), ItemTouchHelperViewHolder
++        BaseViewHolder(itemMainBinding.root)
+ 
+     class FooterViewHolder(val itemFooterBinding: ItemRecyclerFooterBinding) :
+         BaseViewHolder(itemFooterBinding.root)
+-
+-    override fun onItemMove(fromPosition: Int, toPosition: Int): Boolean {
+-        mainViewModel.swapServer(fromPosition, toPosition)
+-        if (fromPosition < data.size && toPosition < data.size) {
+-            Collections.swap(data, fromPosition, toPosition)
+-        }
+-        notifyItemMoved(fromPosition, toPosition)
+-        return true
+-    }
+-
+-    override fun onItemMoveCompleted() {
+-        // do nothing
+-    }
+-
+-    override fun onItemDismiss(position: Int) {
+-    }
+ }
+diff --git a/V2rayNG/app/src/main/java/com/v2ray/ang/viewmodel/MainViewModel.kt b/V2rayNG/app/src/main/java/com/v2ray/ang/viewmodel/MainViewModel.kt
+index 0eff1f0..1dc9a36 100644
+--- a/V2rayNG/app/src/main/java/com/v2ray/ang/viewmodel/MainViewModel.kt
++++ b/V2rayNG/app/src/main/java/com/v2ray/ang/viewmodel/MainViewModel.kt
+@@ -43,6 +43,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
+     val updateListAction by lazy { MutableLiveData<Int>() }
+     val updateTestResultAction by lazy { MutableLiveData<String>() }
+ 
++    /**
++     * Multi-select state for the config list.
++     * A long-press on a card enters selection mode; [selectionCountAction] emits the current
++     * selection size (0 means selection mode is off) so the UI can react to it.
++     */
++    val selectedGuids = linkedSetOf<String>()
++    val selectionCountAction by lazy { MutableLiveData<Int>() }
++
+     /**
+      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
+      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
+@@ -171,6 +179,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
+         return ret
+     }
+ 
++    /**
++     * Copies the currently selected servers (multi-select mode) to the clipboard.
++     * @return The number of servers copied.
++     */
++    fun exportSelectedServer(): Int {
++        if (selectedGuids.isEmpty()) return 0
++        return AngConfigManager.shareNonCustomConfigsToClipboard(
++            getApplication<AngApplication>(),
++            selectedGuids.toList()
++        )
++    }
++
++    /**
++     * Enters selection mode starting with [guid] (triggered by a long-press on a card).
++     * No-op if already in selection mode.
++     */
++    fun startSelection(guid: String) {
++        if (selectedGuids.isEmpty()) {
++            selectedGuids.add(guid)
++            selectionCountAction.value = selectedGuids.size
++        }
++    }
++
++    /**
++     * Toggles whether [guid] is selected. Automatically exits selection mode once the
++     * last selected item is deselected.
++     */
++    fun toggleServerSelection(guid: String) {
++        if (!selectedGuids.remove(guid)) {
++            selectedGuids.add(guid)
++        }
++        selectionCountAction.value = selectedGuids.size
++    }
++
++    /**
++     * Clears the current selection and exits selection mode.
++     */
++    fun clearSelection() {
++        if (selectedGuids.isNotEmpty()) {
++            selectedGuids.clear()
++            selectionCountAction.value = 0
++        }
++    }
++
++    fun isSelectionMode(): Boolean = selectedGuids.isNotEmpty()
++
+     /**
+      * Tests the real ping for all servers.
+      */
+diff --git a/V2rayNG/app/src/main/res/menu/menu_main.xml b/V2rayNG/app/src/main/res/menu/menu_main.xml
+index cd1a53d..a394915 100644
+--- a/V2rayNG/app/src/main/res/menu/menu_main.xml
++++ b/V2rayNG/app/src/main/res/menu/menu_main.xml
+@@ -1,6 +1,12 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <menu xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto">
++    <item
++        android:id="@+id/copy_selected_config"
++        android:icon="@drawable/ic_copy"
++        android:title="@string/menu_item_copy_selected_config"
++        android:visible="false"
++        app:showAsAction="always" />
+     <item
+         android:id="@+id/search_view"
+         android:icon="@drawable/ic_outline_filter_alt_24"
+diff --git a/V2rayNG/app/src/main/res/values-fa/strings.xml b/V2rayNG/app/src/main/res/values-fa/strings.xml
+index 4cd6cab..f319aff 100644
+--- a/V2rayNG/app/src/main/res/values-fa/strings.xml
++++ b/V2rayNG/app/src/main/res/values-fa/strings.xml
+@@ -137,6 +137,8 @@
+     <!-- PerAppProxyActivity -->
+     <string name="msg_dialog_progress">در حال بارگذاری...</string>
+     <string name="menu_item_search">جستجو</string>
++    <string name="menu_item_copy_selected_config">کپی موارد انتخاب‌شده در کلیپ‌بورد</string>
++    <string name="title_selected_config_count">%d مورد انتخاب شد</string>
+     <string name="menu_item_select_all">انتخاب همه</string>
+     <string name="menu_item_invert_selection">معکوس کردن انتخاب‌ها</string>
+     <string name="msg_enter_keywords">کلمات کلیدی را وارد کنید</string>
+diff --git a/V2rayNG/app/src/main/res/values/strings.xml b/V2rayNG/app/src/main/res/values/strings.xml
+index 419e5b6..2333c47 100644
+--- a/V2rayNG/app/src/main/res/values/strings.xml
++++ b/V2rayNG/app/src/main/res/values/strings.xml
+@@ -143,6 +143,8 @@
+     <!-- PerAppProxyActivity -->
+     <string name="msg_dialog_progress">Loading</string>
+     <string name="menu_item_search">Search</string>
++    <string name="menu_item_copy_selected_config">Copy selected to clipboard</string>
++    <string name="title_selected_config_count">%d selected</string>
+     <string name="menu_item_select_all">Select all</string>
+     <string name="menu_item_invert_selection">Invert selection</string>
+     <string name="msg_enter_keywords">Enter keywords</string>

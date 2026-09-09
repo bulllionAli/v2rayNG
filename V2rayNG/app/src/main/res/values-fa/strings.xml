@@ -137,6 +137,8 @@
     <!-- PerAppProxyActivity -->
     <string name="msg_dialog_progress">در حال بارگذاری...</string>
     <string name="menu_item_search">جستجو</string>
+    <string name="menu_item_copy_selected_config">کپی موارد انتخاب‌شده در کلیپ‌بورد</string>
+    <string name="title_selected_config_count">%d مورد انتخاب شد</string>
     <string name="menu_item_select_all">انتخاب همه</string>
     <string name="menu_item_invert_selection">معکوس کردن انتخاب‌ها</string>
     <string name="msg_enter_keywords">کلمات کلیدی را وارد کنید</string>

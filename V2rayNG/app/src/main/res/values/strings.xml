@@ -143,6 +143,8 @@
     <!-- PerAppProxyActivity -->
     <string name="msg_dialog_progress">Loading</string>
     <string name="menu_item_search">Search</string>
+    <string name="menu_item_copy_selected_config">Copy selected to clipboard</string>
+    <string name="title_selected_config_count">%d selected</string>
     <string name="menu_item_select_all">Select all</string>
     <string name="menu_item_invert_selection">Invert selection</string>
     <string name="msg_enter_keywords">Enter keywords</string>

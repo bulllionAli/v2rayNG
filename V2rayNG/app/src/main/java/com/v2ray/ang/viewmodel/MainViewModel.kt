@@ -44,6 +44,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val updateTestResultAction by lazy { MutableLiveData<String>() }
 
     /**
+     * Multi-select state for the config list.
+     * A long-press on a card enters selection mode; [selectionCountAction] emits the current
+     * selection size (0 means selection mode is off) so the UI can react to it.
+     */
+    val selectedGuids = linkedSetOf<String>()
+    val selectionCountAction by lazy { MutableLiveData<Int>() }
+
+    /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
      */
@@ -170,6 +178,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         return ret
     }
+
+    /**
+     * Copies the currently selected servers (multi-select mode) to the clipboard.
+     * @return The number of servers copied.
+     */
+    fun exportSelectedServer(): Int {
+        if (selectedGuids.isEmpty()) return 0
+        return AngConfigManager.shareNonCustomConfigsToClipboard(
+            getApplication<AngApplication>(),
+            selectedGuids.toList()
+        )
+    }
+
+    /**
+     * Enters selection mode starting with [guid] (triggered by a long-press on a card).
+     * No-op if already in selection mode.
+     */
+    fun startSelection(guid: String) {
+        if (selectedGuids.isEmpty()) {
+            selectedGuids.add(guid)
+            selectionCountAction.value = selectedGuids.size
+        }
+    }
+
+    /**
+     * Toggles whether [guid] is selected. Automatically exits selection mode once the
+     * last selected item is deselected.
+     */
+    fun toggleServerSelection(guid: String) {
+        if (!selectedGuids.remove(guid)) {
+            selectedGuids.add(guid)
+        }
+        selectionCountAction.value = selectedGuids.size
+    }
+
+    /**
+     * Clears the current selection and exits selection mode.
+     */
+    fun clearSelection() {
+        if (selectedGuids.isNotEmpty()) {
+            selectedGuids.clear()
+            selectionCountAction.value = 0
+        }
+    }
+
+    fun isSelectionMode(): Boolean = selectedGuids.isNotEmpty()
 
     /**
      * Tests the real ping for all servers.

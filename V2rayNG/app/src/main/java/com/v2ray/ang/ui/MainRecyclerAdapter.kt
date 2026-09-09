@@ -18,15 +18,12 @@ import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.nullIfBlank
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
-import com.v2ray.ang.helper.ItemTouchHelperAdapter
-import com.v2ray.ang.helper.ItemTouchHelperViewHolder
 import com.v2ray.ang.viewmodel.MainViewModel
-import java.util.Collections
 
 class MainRecyclerAdapter(
     private val mainViewModel: MainViewModel,
     private val adapterListener: MainAdapterListener?
-) : RecyclerView.Adapter<MainRecyclerAdapter.BaseViewHolder>(), ItemTouchHelperAdapter {
+) : RecyclerView.Adapter<MainRecyclerAdapter.BaseViewHolder>() {
     companion object {
         private const val VIEW_TYPE_ITEM = 1
         private const val VIEW_TYPE_FOOTER = 2
@@ -83,7 +80,15 @@ class MainRecyclerAdapter(
             holder.itemMainBinding.layoutSubscription.visibility = if (subRemarks.isEmpty()) View.GONE else View.VISIBLE
 
             //layout
-            if (doubleColumnDisplay) {
+            val inSelectionMode = mainViewModel.isSelectionMode()
+            if (inSelectionMode) {
+                // Hide the per-row action icons while selecting so a stray tap can't
+                // accidentally share/edit/remove a config.
+                holder.itemMainBinding.layoutShare.visibility = View.GONE
+                holder.itemMainBinding.layoutEdit.visibility = View.GONE
+                holder.itemMainBinding.layoutRemove.visibility = View.GONE
+                holder.itemMainBinding.layoutMore.visibility = View.GONE
+            } else if (doubleColumnDisplay) {
                 holder.itemMainBinding.layoutShare.visibility = View.GONE
                 holder.itemMainBinding.layoutEdit.visibility = View.GONE
                 holder.itemMainBinding.layoutRemove.visibility = View.GONE
@@ -110,8 +115,28 @@ class MainRecyclerAdapter(
                 }
             }
 
+            // Selection highlight (reuses the same highlight the old drag-and-drop used).
+            if (guid in mainViewModel.selectedGuids) {
+                holder.onItemSelected()
+            } else {
+                holder.onItemClear()
+            }
+
             holder.itemMainBinding.infoContainer.setOnClickListener {
-                adapterListener?.onSelectServer(guid)
+                if (mainViewModel.isSelectionMode()) {
+                    // MainViewModel.selectionCountAction changes here, which GroupServerFragment
+                    // observes to refresh the whole list (highlight + show/hide action icons).
+                    mainViewModel.toggleServerSelection(guid)
+                } else {
+                    adapterListener?.onSelectServer(guid)
+                }
+            }
+
+            holder.itemMainBinding.infoContainer.setOnLongClickListener {
+                if (!mainViewModel.isSelectionMode()) {
+                    mainViewModel.startSelection(guid)
+                }
+                true
             }
         }
 
@@ -213,24 +238,8 @@ class MainRecyclerAdapter(
     }
 
     class MainViewHolder(val itemMainBinding: ItemRecyclerMainBinding) :
-        BaseViewHolder(itemMainBinding.root), ItemTouchHelperViewHolder
+        BaseViewHolder(itemMainBinding.root)
 
     class FooterViewHolder(val itemFooterBinding: ItemRecyclerFooterBinding) :
         BaseViewHolder(itemFooterBinding.root)
-
-    override fun onItemMove(fromPosition: Int, toPosition: Int): Boolean {
-        mainViewModel.swapServer(fromPosition, toPosition)
-        if (fromPosition < data.size && toPosition < data.size) {
-            Collections.swap(data, fromPosition, toPosition)
-        }
-        notifyItemMoved(fromPosition, toPosition)
-        return true
-    }
-
-    override fun onItemMoveCompleted() {
-        // do nothing
-    }
-
-    override fun onItemDismiss(position: Int) {
-    }
 }
