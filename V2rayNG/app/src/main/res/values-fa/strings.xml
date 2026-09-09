@@ -138,6 +138,7 @@
     <string name="msg_dialog_progress">در حال بارگذاری...</string>
     <string name="menu_item_search">جستجو</string>
     <string name="menu_item_copy_selected_config">کپی موارد انتخاب‌شده در کلیپ‌بورد</string>
+    <string name="menu_item_deselect_all_config">لغو انتخاب</string>
     <string name="title_selected_config_count">%d مورد انتخاب شد</string>
     <string name="menu_item_select_all">انتخاب همه</string>
     <string name="menu_item_invert_selection">معکوس کردن انتخاب‌ها</string>

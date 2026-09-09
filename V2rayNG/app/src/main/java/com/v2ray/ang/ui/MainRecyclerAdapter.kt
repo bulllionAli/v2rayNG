@@ -2,6 +2,7 @@ package com.v2ray.ang.ui
 
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -55,7 +56,7 @@ class MainRecyclerAdapter(
 
             //Name address
             holder.itemMainBinding.tvName.text = profile.remarks
-            holder.itemMainBinding.tvStatistics.text = getAddress(profile)
+            holder.itemMainBinding.tvStatistics.text = getShortAddress(profile)
             holder.itemMainBinding.tvType.text = getProtocolDescription(profile)
 
             //TestResult
@@ -116,11 +117,23 @@ class MainRecyclerAdapter(
             }
 
             // Selection highlight (reuses the same highlight the old drag-and-drop used).
-            if (guid in mainViewModel.selectedGuids) {
+            // The highlight background is always light gray, which makes the default
+            // (near-white in dark theme) text unreadable, so force black text while selected
+            // and restore the theme's normal text color otherwise.
+            val isSelected = guid in mainViewModel.selectedGuids
+            if (isSelected) {
                 holder.onItemSelected()
             } else {
                 holder.onItemClear()
             }
+            val defaultTextColor = TypedValue().let {
+                context.theme.resolveAttribute(android.R.attr.textColorPrimary, it, true)
+                it.data
+            }
+            val cardTextColor = if (isSelected) Color.BLACK else defaultTextColor
+            holder.itemMainBinding.tvName.setTextColor(cardTextColor)
+            holder.itemMainBinding.tvStatistics.setTextColor(cardTextColor)
+            holder.itemMainBinding.tvSubscription.setTextColor(cardTextColor)
 
             holder.itemMainBinding.infoContainer.setOnClickListener {
                 if (mainViewModel.isSelectionMode()) {
@@ -150,6 +163,21 @@ class MainRecyclerAdapter(
      */
     private fun getAddress(profile: ProfileItem): String {
         return profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile)
+    }
+
+    /**
+     * Compact "address:port" for the card, e.g. "98aab...:443" or "66.233...:8080".
+     * Falls back to [getAddress] when there is no plain server/port (e.g. a custom config).
+     * @param profile The server configuration
+     * @return Truncated address:port string
+     */
+    private fun getShortAddress(profile: ProfileItem): String {
+        val server = profile.server?.trim().orEmpty()
+        val port = profile.serverPort?.trim().orEmpty()
+        if (server.isEmpty()) return getAddress(profile)
+
+        val shortServer = if (server.length > 5) server.take(5) + "..." else server
+        return if (port.isNotEmpty()) "$shortServer:$port" else shortServer
     }
 
     /**
