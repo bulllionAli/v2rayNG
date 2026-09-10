@@ -87,10 +87,11 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
             adapter.setData(mainViewModel.serversCache, index)
         }
 
-        // Re-render the whole list whenever the selection changes (long-press start, tap
-        // toggle, the toolbar "copy" action, or a back-press clearing the selection) so
-        // highlighting and the per-row action icons stay in sync.
-        mainViewModel.selectionCountAction.observe(viewLifecycleOwner) {
+        // Re-render the whole list only when the selection is cleared from outside the
+        // adapter (toolbar Cancel, back press, or the "copy" action clearing selection
+        // afterwards). Ordinary long-press/tap selection changes are refreshed by the
+        // adapter itself with a targeted update, so this doesn't fire on every tap.
+        mainViewModel.clearSelectionAction.observe(viewLifecycleOwner) {
             adapter.notifyDataSetChanged()
         }
 

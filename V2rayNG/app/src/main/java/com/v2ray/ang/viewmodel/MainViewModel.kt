@@ -46,10 +46,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Multi-select state for the config list.
      * A long-press on a card enters selection mode; [selectionCountAction] emits the current
-     * selection size (0 means selection mode is off) so the UI can react to it.
+     * selection size (0 means selection mode is off) so the UI (toolbar) can react to it.
+     * [clearSelectionAction] fires only when the selection is cleared from *outside* the
+     * adapter (toolbar Cancel, back press, post-copy) - the adapter's own long-press/tap
+     * listeners handle their own (targeted) refresh, so the list doesn't need a full
+     * rebind on every ordinary tap.
      */
     val selectedGuids = linkedSetOf<String>()
     val selectionCountAction by lazy { MutableLiveData<Int>() }
+    val clearSelectionAction by lazy { MutableLiveData<Long>() }
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
@@ -220,6 +225,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (selectedGuids.isNotEmpty()) {
             selectedGuids.clear()
             selectionCountAction.value = 0
+            clearSelectionAction.value = System.currentTimeMillis()
         }
     }
 

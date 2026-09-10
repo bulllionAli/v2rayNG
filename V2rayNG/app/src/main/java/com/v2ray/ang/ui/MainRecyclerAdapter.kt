@@ -45,6 +45,7 @@ class MainRecyclerAdapter(
 
     override fun getItemCount() = data.size + 1
 
+    @SuppressLint("NotifyDataSetChanged")
     override fun onBindViewHolder(holder: BaseViewHolder, position: Int) {
         if (holder is MainViewHolder) {
             val context = holder.itemMainBinding.root.context
@@ -141,9 +142,15 @@ class MainRecyclerAdapter(
 
             holder.itemMainBinding.infoContainer.setOnClickListener {
                 if (mainViewModel.isSelectionMode()) {
-                    // MainViewModel.selectionCountAction changes here, which GroupServerFragment
-                    // observes to refresh the whole list (highlight + show/hide action icons).
                     mainViewModel.toggleServerSelection(guid)
+                    if (mainViewModel.isSelectionMode()) {
+                        // Still selecting: only this row's look changed (highlight/text
+                        // color), so a targeted update keeps tapping responsive.
+                        notifyItemChanged(holder.bindingAdapterPosition)
+                    } else {
+                        // Deselected the last item: every row needs its action icons back.
+                        notifyDataSetChanged()
+                    }
                 } else {
                     adapterListener?.onSelectServer(guid)
                 }
@@ -152,6 +159,8 @@ class MainRecyclerAdapter(
             holder.itemMainBinding.infoContainer.setOnLongClickListener {
                 if (!mainViewModel.isSelectionMode()) {
                     mainViewModel.startSelection(guid)
+                    // Entering selection mode: every row needs to hide its action icons.
+                    notifyDataSetChanged()
                 }
                 true
             }
