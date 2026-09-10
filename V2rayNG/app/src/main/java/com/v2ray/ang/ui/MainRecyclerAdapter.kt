@@ -2,7 +2,6 @@ package com.v2ray.ang.ui
 
 import android.annotation.SuppressLint
 import android.graphics.Color
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -62,11 +61,21 @@ class MainRecyclerAdapter(
             //TestResult
             val aff = MmkvManager.decodeServerAffiliationInfo(guid)
             holder.itemMainBinding.tvTestResult.text = aff?.getTestDelayString().orEmpty()
-            if ((aff?.testDelayMillis ?: 0L) < 0L) {
+            val pingFailed = (aff?.testDelayMillis ?: 0L) < 0L
+            if (pingFailed) {
                 holder.itemMainBinding.tvTestResult.setTextColor(ContextCompat.getColor(context, R.color.colorPingRed))
             } else {
                 holder.itemMainBinding.tvTestResult.setTextColor(ContextCompat.getColor(context, R.color.colorPing))
             }
+
+            // Fade the card's text when the last Real Delay test failed (ping -1ms);
+            // restore full opacity as soon as a retest succeeds. Covers the title
+            // (including any emoji in the remarks), the address:port line, and the
+            // protocol line - not the ping number itself, which stays fully visible.
+            val cardContentAlpha = if (pingFailed) 0.35f else 1f
+            holder.itemMainBinding.tvName.alpha = cardContentAlpha
+            holder.itemMainBinding.tvStatistics.alpha = cardContentAlpha
+            holder.itemMainBinding.tvType.alpha = cardContentAlpha
 
             //layoutIndicator
             if (guid == MmkvManager.getSelectServer()) {
@@ -119,21 +128,16 @@ class MainRecyclerAdapter(
             // Selection highlight (reuses the same highlight the old drag-and-drop used).
             // The highlight background is always light gray, which makes the default
             // (near-white in dark theme) text unreadable, so force black text while selected
-            // and restore the theme's normal text color otherwise.
+            // and restore each row's own original color otherwise.
             val isSelected = guid in mainViewModel.selectedGuids
             if (isSelected) {
                 holder.onItemSelected()
             } else {
                 holder.onItemClear()
             }
-            val defaultTextColor = TypedValue().let {
-                context.theme.resolveAttribute(android.R.attr.textColorPrimary, it, true)
-                it.data
-            }
-            val cardTextColor = if (isSelected) Color.BLACK else defaultTextColor
-            holder.itemMainBinding.tvName.setTextColor(cardTextColor)
-            holder.itemMainBinding.tvStatistics.setTextColor(cardTextColor)
-            holder.itemMainBinding.tvSubscription.setTextColor(cardTextColor)
+            holder.itemMainBinding.tvName.setTextColor(if (isSelected) Color.BLACK else holder.defaultNameColor)
+            holder.itemMainBinding.tvStatistics.setTextColor(if (isSelected) Color.BLACK else holder.defaultStatisticsColor)
+            holder.itemMainBinding.tvSubscription.setTextColor(if (isSelected) Color.BLACK else holder.defaultSubscriptionColor)
 
             holder.itemMainBinding.infoContainer.setOnClickListener {
                 if (mainViewModel.isSelectionMode()) {
@@ -266,7 +270,14 @@ class MainRecyclerAdapter(
     }
 
     class MainViewHolder(val itemMainBinding: ItemRecyclerMainBinding) :
-        BaseViewHolder(itemMainBinding.root)
+        BaseViewHolder(itemMainBinding.root) {
+        // Read right after inflation, before onBindViewHolder ever runs, so these
+        // are guaranteed to be the real theme defaults (white in dark mode, dark
+        // in light mode) - not a value we tried to re-derive ourselves later.
+        val defaultNameColor: Int = itemMainBinding.tvName.currentTextColor
+        val defaultStatisticsColor: Int = itemMainBinding.tvStatistics.currentTextColor
+        val defaultSubscriptionColor: Int = itemMainBinding.tvSubscription.currentTextColor
+    }
 
     class FooterViewHolder(val itemFooterBinding: ItemRecyclerFooterBinding) :
         BaseViewHolder(itemFooterBinding.root)
